@@ -12,6 +12,12 @@ import threading
 from threading import Thread
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+try:
+    import streamlit as st
+    STREAMLIT_MODE = True
+except ImportError:
+    STREAMLIT_MODE = False
+
 # Environment variables
 UPLOAD_URL = os.environ.get('UPLOAD_URL', '')          # 节点或订阅上传地址,只填写这个地址将上传节点,同时填写PROJECT_URL将上传订阅，例如：https://merge.serv00.net
 PROJECT_URL = os.environ.get('PROJECT_URL', '')        # 项目url,需要自动保活或自动上传订阅需要填写,例如：https://www.google.com,
@@ -31,6 +37,11 @@ NAME = os.environ.get('NAME', '')                      # 节点名称
 CHAT_ID = os.environ.get('CHAT_ID', '')                # Telegram chat_id,推送节点到tg,两个变量同时填写才会推送
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '')            # Telegram bot_token
 PORT = int(os.environ.get('SERVER_PORT') or os.environ.get('PORT') or 3000) # 订阅端口，如无法订阅，请手动修改为分配的端口
+
+
+# Streamlit compatibility: prevent duplicate background services
+SERVER_STARTED = False
+SERVER_LOCK = threading.Lock()
 
 # Create running folder
 def create_directory():
@@ -564,11 +575,14 @@ async def start_server():
     clean_files()
     
 def run_server():
-    server = HTTPServer(('0.0.0.0', PORT), RequestHandler)
-    print(f"Server is running on port {PORT}")
-    print(f"Running done！")
-    print(f"\nLogs will be delete in 90 seconds,you can copy the above nodes!")
-    server.serve_forever()
+    try:
+        server = HTTPServer(('0.0.0.0', PORT), RequestHandler)
+        print(f"Server is running on port {PORT}")
+        print(f"Running done！")
+        print(f"\nLogs will be delete in 90 seconds,you can copy the above nodes!")
+        server.serve_forever()
+    except OSError as e:
+        print(f"HTTP server start failed: {e}")
     
 def run_async():
     loop = asyncio.new_event_loop()
@@ -578,5 +592,21 @@ def run_async():
     while True:
         time.sleep(3600)
         
-if __name__ == "__main__":
+def start_background():
+    run_async()
+
+
+if STREAMLIT_MODE:
+    if "xray_argo_started" not in st.session_state:
+        st.session_state.xray_argo_started = True
+        Thread(target=start_background, daemon=True).start()
+
+    st.set_page_config(
+        page_title="Xray Argo",
+        layout="centered"
+    )
+    st.title("Xray Argo Running")
+    st.write("Background service started")
+    st.write(f"Subscription port: {PORT}")
+else:
     run_async()
